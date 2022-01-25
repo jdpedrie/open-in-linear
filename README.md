@@ -5,7 +5,9 @@ browser.
 
 ## Install
 
-?
+```
+go install github.com/jdpedrie/open-in-linear@latest
+```
 
 ## Configuration
 
