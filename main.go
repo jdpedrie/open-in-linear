@@ -14,26 +14,28 @@ import (
 
 var refRegex = regexp.MustCompile(`([a-zA-Z0-9]{1,5}-\d{1,})`)
 
-func main() {
-	var issue string
+const WS_ENV = "LINEAR_WORKSPACE"
 
-	wsName := flag.String("workspace", "", "The linear workspace name")
-	issueFlag := flag.String("issue", "", "The name of the linear issue")
+func main() {
+	var (
+		issue             string
+		workspace         string
+		issueFromRepo     string
+		workspaceFromRepo string
+	)
+
+	workspace = *flag.String("workspace", "", "The linear workspace name")
+	issue = strings.ToUpper(*flag.String("issue", "", "The name of the linear issue"))
 	repoFlag := flag.String("repo", "",
 		"The absolute path to a git repo. A linear issue name must be the "+
 			"current working branch",
 	)
 	flag.Parse()
 
-	if *wsName == "" {
-		log.Fatal("no workspace name specified")
-	}
-
-	if *issueFlag != "" {
-		issue = strings.ToUpper(*issueFlag)
-	} else if *repoFlag != "" {
+	var repo *git.Repository
+	if *repoFlag != "" {
 		var err error
-		issue, err = getIssueFromRepo(*repoFlag)
+		repo, err = getRepo(*repoFlag)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -43,18 +45,49 @@ func main() {
 			log.Fatal(err)
 		}
 
-		issue, err = getIssueFromRepo(dir)
+		repo, err = getRepo(dir)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	cmd := []*exec.Cmd{
-		exec.Command("open", fmt.Sprintf("linear://%s/issue/%s", *wsName, issue)),
-		exec.Command("open", fmt.Sprintf("https://linear.app/%s/issue/%s", *wsName, issue)),
+	if repo != nil {
+		var err error
+		workspaceFromRepo, err = getWorkspaceFromRepo(repo)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		issueFromRepo, err = getIssueFromRepo(repo)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	var err error
+	if workspace == "" {
+		if workspaceFromRepo != "" {
+			workspace = workspaceFromRepo
+		} else if ws := os.Getenv(WS_ENV); ws != "" {
+			workspace = ws
+		} else {
+			log.Fatal("no workspace name provided")
+		}
+	}
+
+	if issue == "" && issueFromRepo != "" {
+		issue = issueFromRepo
+	}
+
+	if issue == "" {
+		log.Fatal("no issue name provided")
+	}
+
+	cmd := []*exec.Cmd{
+		exec.Command("open", fmt.Sprintf("linear://%s/issue/%s", workspace, issue)),
+		exec.Command("open", fmt.Sprintf("https://linear.app/%s/issue/%s", workspace, issue)),
+	}
+
 	for _, c := range cmd {
 		err = c.Run()
 		if err == nil {
@@ -67,26 +100,39 @@ func main() {
 	}
 }
 
-func getIssueFromRepo(dir string) (string, error) {
-	repo, err := git.PlainOpen(dir)
-	if err != nil {
-		return "", err
-	}
+func getRepo(dir string) (*git.Repository, error) {
+	return git.PlainOpen(dir)
+}
 
+func getIssueFromRepo(repo *git.Repository) (string, error) {
 	h, err := repo.Head()
 	if err != nil {
 		return "", err
 	}
 
-	log.Println(h.Name())
+	return strings.ToUpper(refRegex.FindString(h.Name().String())), nil
+}
 
-	m := refRegex.FindString(h.Name().String())
-	if m == "" {
-		return "", fmt.Errorf(
-			"current working branch %s does not contain a linear issue name",
-			h.Name().String(),
-		)
+func getWorkspaceFromRepo(repo *git.Repository) (string, error) {
+	c, err := repo.Config()
+	if err != nil {
+		return "", err
 	}
 
-	return strings.ToUpper(m), nil
+	var ws string
+	for _, section := range c.Raw.Sections {
+		if section.Name != "linear" {
+			continue
+		}
+
+		for _, opt := range section.Options {
+			if opt.Key != "workspace" {
+				continue
+			}
+
+			ws = opt.Value
+		}
+	}
+
+	return ws, nil
 }

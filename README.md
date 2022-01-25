@@ -7,6 +7,26 @@ browser.
 
 ?
 
+## Configuration
+
+The name of the linear workspace is required. It can be provided in one of three
+ways.
+
+1. The CLI accepts a `-workspace` flag.
+2. The current git repo can provide a `linear.workspace` config value. This
+   setting only functions when executed from a git repository, or when the
+   `-repo` flag is provided.
+3. Set the `LINEAR_WORKSPACE` environment variable.
+
+These three locations are checked in order, and the first to be found is
+preferred.
+
+### Setting the git config value
+
+```sh
+$ git config --add linear.workspace <my-workspace>
+```
+
 ## Usage
 
 When run from a git repository where the current branch name contains a linear
